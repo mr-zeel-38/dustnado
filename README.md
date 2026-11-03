@@ -295,11 +295,7 @@ If Dustnado helped free up space on your drives, please consider giving it a sta
 <div align="center">
 
 <a href="https://star-history.com/#mr-zeel-38/dustnado&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=mr-zeel-38/dustnado&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=mr-zeel-38/dustnado&type=Date" />
-    <img alt="Dustnado Star History Chart" src="https://api.star-history.com/svg?repos=mr-zeel-38/dustnado&type=Date" width="760" style="max-width: 100%; height: auto;" />
-  </picture>
+  <img alt="Dustnado Star History Chart" src="https://api.star-history.com/svg?repos=mr-zeel-38/dustnado&type=Date" width="760" style="max-width: 100%; height: auto;" />
 </a>
 
 <p>
