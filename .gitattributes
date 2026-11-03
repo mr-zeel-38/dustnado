@@ -1,0 +1,6 @@
+# Batch files MUST keep Windows (CRLF) line endings or cmd.exe can misbehave.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.md  text eol=lf
+*.yml text eol=lf
+*.png binary

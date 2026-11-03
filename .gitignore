@@ -1,0 +1,8 @@
+# Generated reports from test runs
+Dustnado_Report_*.txt
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/

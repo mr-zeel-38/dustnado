@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Dustnado.bat (PowerShell syntax, ASCII-only, CRLF)
+        shell: powershell
+        run: |
+          $raw = [IO.File]::ReadAllText("$PWD\Dustnado.bat")
+          $i = $raw.LastIndexOf('::PS' + 'CODE::')
+          if ($i -lt 0) { throw 'PSCODE marker not found' }
+          $code = $raw.Substring($i + 10)
+          $tokens = $null; $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseInput($code, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host "Line $($_.Extent.StartLineNumber): $($_.Message)" }; exit 1 }
+          if ($raw -match '[^\x00-\x7F]') { throw 'Non-ASCII characters found - use [char]0x... for symbols' }
+          if ($raw -notmatch "`r`n") { throw 'Dustnado.bat must use CRLF line endings' }
+          Write-Host 'Syntax OK, ASCII OK, CRLF OK'
