@@ -45,7 +45,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference    = 'SilentlyContinue'
 
 $AppName = 'Dustnado'
-$AppVer  = '1.0.1'
+$AppVer  = '1.0.2'
 $Author  = 'Zeel Patel'
 
 $cli = (' ' + $env:DUSTNADO_ARGS + ' ').ToLower()
@@ -87,7 +87,7 @@ $EmptyRecycleBin  = $true    # on every fixed drive
 $RemoveOldWindows = $true    # Windows.old and leftover upgrade folders
 $ComponentCleanup = -not [bool]($cli -match '\s/nodism\s')
 $ResetBase        = [bool]($cli -match '\s/deep\s')   # /deep = deeper DISM cleanup (installed updates can no longer be uninstalled)
-$ScanTimeoutSec   = 150      # max seconds to analyse one drive (huge drives are reported as partial)
+$ScanTimeoutSec   = 90       # max seconds to analyse one drive at the end (huge drives are reported as partial)
 $CountdownSeconds = 12
 # -----------------------------------------------------------------------------
 
@@ -850,19 +850,11 @@ function Get-SmartTips {
             if (($fr / [double]$dv.Total) -lt 0.08) { $tips.Add(('{0}: is almost full ({1} free).' -f $dv.Letter, (Format-Size $fr))) }
         }
     }
-    if ($DryRun) { $tips.Add('Run Dustnado again without /scan to actually reclaim the space listed above.') }
+    if ($DryRun) { $tips.Add('Press C on the scan report (or run Dustnado without /scan) to actually reclaim the space listed above.') }
     return @($tips | Select-Object -Unique)
 }
 
-# ------------------------------- the task list --------------------------------
-$Tasks = New-Object System.Collections.ArrayList
-$script:Tasks = $Tasks
-function Add-Task {
-    param([string]$Name, [int]$Weight, [scriptblock]$Action, [bool]$Enabled = $true)
-    [void]$Tasks.Add([pscustomobject]@{ Name = $Name; Weight = $Weight; Action = $Action; Enabled = $Enabled; Status = 'pending'; Freed = [int64]0; Note = '' })
-}
-
-Add-Task 'Scanning all drives' 10 {
+function Invoke-DriveScan {
     $skipNames = @('System Volume Information', '$Recycle.Bin', 'Config.Msi')
     $nd = $Drives.Count; $di = 0; $totalFolders = 0
     foreach ($dv in $Drives) {
@@ -889,6 +881,14 @@ Add-Task 'Scanning all drives' 10 {
     $script:TaskPartial = $false
     $script:TaskNote = ('{0} drives, {1} folders' -f $nd, $totalFolders)
     foreach ($k in $script:Scan.Keys) { if ($script:Scan[$k].Partial) { $script:TaskNote += ' (partial)' } }
+}
+
+# ------------------------------- the task list --------------------------------
+$Tasks = New-Object System.Collections.ArrayList
+$script:Tasks = $Tasks
+function Add-Task {
+    param([string]$Name, [int]$Weight, [scriptblock]$Action, [bool]$Enabled = $true)
+    [void]$Tasks.Add([pscustomobject]@{ Name = $Name; Weight = $Weight; Action = $Action; Enabled = $Enabled; Status = 'pending'; Freed = [int64]0; Note = '' })
 }
 
 Add-Task 'User temp files' 5 {
@@ -1017,7 +1017,9 @@ Add-Task 'Windows component store (DISM)' 30 {
     if ($code -ne 0 -and $code -ne 3010) { $script:TaskNote = ('DISM code {0}' -f $code) } else { $script:TaskNote = 'WinSxS optimised' }
 } $ComponentCleanup
 
-Add-Task 'Final analysis & smart tips' 10 {
+Add-Task 'Analyzing drives & smart tips' 20 {
+    Invoke-DriveScan
+    $script:TaskPartial = $false
     $cands = New-Object System.Collections.ArrayList
     $sysScan = $script:Scan[$DriveLetter]
     foreach ($p in $Profiles) {
@@ -1092,8 +1094,9 @@ function Show-Intro {
     $end = (Get-Date).AddSeconds($CountdownSeconds)
     while ($true) {
         $left = [int][math]::Ceiling(($end - (Get-Date)).TotalSeconds)
-        if ($left -le 0) { return 'scan' }
-        Put 2 $y (Fit ('No key pressed: SAFE scan-only starts in {0} s  (nothing is deleted unless you press ENTER)' -f $left) 80) 'White'
+        if ($left -le 0) { return 'start' }
+        if ($DryRun) { Put 2 $y (Fit ('Scan-only starts in {0} s  (nothing will be deleted)' -f $left) 80) 'Yellow' }
+        else { Put 2 $y (Fit ('Cleaning starts automatically in {0} s ...   (press S for scan-only, Q to quit)' -f $left) 80) 'White' }
         try {
             if ([Console]::KeyAvailable) {
                 $k = [Console]::ReadKey($true)
@@ -1165,7 +1168,7 @@ function Show-Report {
         }
         [void]$sb.AppendLine('')
         foreach ($k in ($script:Scan.Keys | Sort-Object)) {
-            [void]$sb.AppendLine(('--- FOLDERS ON {0}: (before cleanup, approximate{1}) ---' -f $k, $(if ($script:Scan[$k].Partial) { ', partial scan' } else { '' })))
+            [void]$sb.AppendLine(('--- FOLDERS ON {0}: (after cleanup, approximate{1}) ---' -f $k, $(if ($script:Scan[$k].Partial) { ', partial scan' } else { '' })))
             foreach ($f in ($script:Scan[$k].Folders | Select-Object -First 25)) { [void]$sb.AppendLine(('{0,11}  {1}' -f (Format-Size $f.Size), $f.Path)) }
             [void]$sb.AppendLine('')
         }
@@ -1235,28 +1238,31 @@ function Show-Report {
         foreach ($tp in ($script:Tips | Select-Object -First $nP)) { Put 4 $y ($cArr + ' ') 'Cyan'; Put 6 $y (Fit $tp ($W - 8)) 'White'; $y++ }
     }
     if ($reportPath) { Put 2 ($y + 1) (Fit-Mid ('Full report saved: ' + $reportPath) ($W - 2)) 'DarkGray' }
-    Put 2 ($y + 2) 'Press any key to close ...' 'Cyan'
+    if ($DryRun) { Put 2 ($y + 2) 'Press C to CLEAN NOW (delete the junk found)   -   any other key closes' 'Yellow' }
+    else { Put 2 ($y + 2) 'Press any key to close ...' 'Cyan' }
 }
 
 # ------------------------------------ main ------------------------------------
-$ranOk = $false
-try {
-    try { [Console]::CursorVisible = $false } catch {}
-    Init-Layout
-    $choice = Show-Intro
-    if ($choice -eq 'quit') {
-        Clear-Host
-        Put 2 2 'Cancelled - nothing was changed.' 'Yellow'
-        Start-Sleep -Seconds 2
-        return
-    }
-    if ($choice -eq 'scan') { $DryRun = $true }
-
+function Reset-RunState {
+    foreach ($t in $Tasks) { $t.Status = 'pending'; $t.Freed = [int64]0; $t.Note = '' }
+    $script:DoneW = 0; $script:CurW = 0
+    $script:FreedDone = [int64]0; $script:CurFreed = [int64]0
+    $script:DelDone = [int64]0; $script:DelNow = [int64]0
+    $script:FilesAllDone = [int64]0; $script:FilesAllNow = [int64]0
+    $script:CurIdx = 0; $script:CurName = ''
+    $script:Step = -1; $script:Detail = ''; $script:LiveKind = 'idle'; $script:LiveText = ''
+    $script:Token = [int64]0; $script:TokenSeen = [int64]-1; $script:LastChangeMs = 0
+    $script:RateMs = 0; $script:RateFiles = [int64]0; $script:Rate = [double]0; $script:RateHist.Clear()
+    $script:Scan = @{}; $script:Hogs = @(); $script:Tips = @()
+    $script:DriveBefore = @{}
     foreach ($dv in $Drives) { $script:DriveBefore[$dv.Letter] = Get-Free $dv.Letter }
     $script:SW.Restart()
     $script:LastDraw = 0
-    Draw-Main
+}
 
+function Invoke-Run {
+    Reset-RunState
+    Draw-Main
     for ($i = 0; $i -lt $Tasks.Count; $i++) {
         $t = $Tasks[$i]
         $script:CurIdx = $i + 1
@@ -1290,7 +1296,6 @@ try {
         Draw-Task $i
         Update-UI -Force
     }
-
     $script:CurName = 'All done'
     $script:CurIdx = $Tasks.Count
     $script:DoneW = $script:TotalW
@@ -1298,9 +1303,32 @@ try {
     Update-UI -Force
     Start-Sleep -Milliseconds 800
     Show-Report -Elapsed $script:SW.Elapsed
-    $ranOk = $true
-    try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch {}
-    try { [void][Console]::ReadKey($true) } catch { Start-Sleep -Seconds 30 }
+}
+
+$ranOk = $false
+try {
+    try { [Console]::CursorVisible = $false } catch {}
+    Init-Layout
+    $choice = Show-Intro
+    if ($choice -eq 'quit') {
+        Clear-Host
+        Put 2 2 'Cancelled - nothing was changed.' 'Yellow'
+        Start-Sleep -Seconds 2
+        return
+    }
+    if ($choice -eq 'scan') { $DryRun = $true }
+
+    $again = $true
+    while ($again) {
+        $again = $false
+        Invoke-Run
+        $ranOk = $true
+        try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch {}
+        $key = $null
+        try { $key = [Console]::ReadKey($true) } catch { Start-Sleep -Seconds 30 }
+        # after a scan-only run, C starts the real cleaning without restarting the program
+        if ($DryRun -and $key -and $key.Key -eq 'C') { $DryRun = $false; $again = $true }
+    }
 }
 finally {
     Restore-Services

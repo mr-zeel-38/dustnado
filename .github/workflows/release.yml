@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the script version
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $raw = Get-Content -Raw -Path Dustnado.bat
+          $m = [regex]::Match($raw, "AppVer\s*=\s*'([^']+)'")
+          if (-not $m.Success) { throw 'Could not find $AppVer in Dustnado.bat' }
+          $ver = $m.Groups[1].Value
+          if ("v$ver" -ne $env:TAG) { throw "Tag $($env:TAG) does not match AppVer $ver in Dustnado.bat" }
+          Write-Host "Tag $($env:TAG) matches AppVer $ver"
+
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash -Algorithm SHA256 -Path Dustnado.bat).Hash.ToLower()
+          "$h  Dustnado.bat" | Out-File -Encoding ascii Dustnado.bat.sha256
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Dustnado ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            Dustnado.bat
+            Dustnado.bat.sha256

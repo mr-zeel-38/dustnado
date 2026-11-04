@@ -27,3 +27,10 @@ Set `$script:TaskNote` for the short note shown in the list, and `Skip-Task 'rea
 
 ## Pull requests
 Keep PRs small and focused, explain *why* each new path is safe to delete, and update `CHANGELOG.md`.
+
+## Releasing (maintainer)
+1. Bump `$AppVer` in `Dustnado.bat` and add an entry to `CHANGELOG.md`.
+2. Commit and push to `main`.
+3. Tag and push: `git tag -a v1.2.3 -m "Dustnado v1.2.3"` then `git push origin v1.2.3`.
+
+The **Release** workflow checks that the tag matches `$AppVer`, then publishes the GitHub Release with `Dustnado.bat` and `Dustnado.bat.sha256` attached. The README download buttons use `releases/latest/download/Dustnado.bat`.
